@@ -40,6 +40,15 @@ config PCIE_DEBUG_INFO
 	  base and limit, prefetchable memory base and limit, prefetchable memory
 	  base upper 32 bits and prefetchable memory limit upper 32 bits.
 
+config PCIE_RP_ERROR_STATUS_DISPLAY
+	bool "Display PCIe Root Port error status"
+	default n
+	help
+	  Display PCIe Root Port error status registers (AER and DPC) during
+	  boot. This includes UCE_Mask, UCE_Severity, CE_Mask from AER capability
+	  and DPC_Control, RPPIO_Mask, RPPIO_Severity, RPPIO_SysError, RPPIO_Exception
+	  from DPC capability.
+
 config PCIE_CLOCK_CONTROL_THROUGH_P2SB
 	bool
 	default n

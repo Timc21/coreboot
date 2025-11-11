@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include <stdint.h>
+#include <stdio.h>
 
 #include <commonlib/helpers.h>
 #include <console/console.h>
@@ -171,4 +172,135 @@ void pcie_rp_update_devicetree(const struct pcie_rp_group *const groups)
 
 		link = &dev->sibling;
 	}
+}
+
+/* Helper function to find extended capability using devfn */
+static unsigned int pcie_rp_find_ext_cap(pci_devfn_t devfn, unsigned int cap_id)
+{
+	unsigned int offset = PCIE_EXT_CAP_OFFSET;
+
+	while (offset >= PCIE_EXT_CAP_OFFSET) {
+		const unsigned int cap = pci_s_read_config32(devfn, offset);
+		if (cap == 0xffffffff)
+			break;
+
+		if ((cap & 0xffff) == cap_id)
+			return offset;
+
+		offset = (cap >> 20) & 0xffc;
+		if (offset == 0)
+			break;
+	}
+
+	return 0;
+}
+
+void pcie_rp_display_error_status(const struct pcie_rp_group *const groups)
+{
+	if (!CONFIG(PCIE_RP_ERROR_STATUS_DISPLAY))
+		return;
+
+	if (!groups || !groups->count)
+		return;
+
+	struct bus *const root = pci_root_bus();
+	if (!root)
+		return;
+
+	/* Print header */
+	printk(BIOS_INFO, "\n");
+	printk(BIOS_INFO, "%-12s %-12s %-15s %-12s %-12s %-12s %-15s %-15s %-15s\n",
+	       "RootPort", "UCE_Mask", "UCE_Severity", "CE_Mask", "DPC_Control",
+	       "RPPIO_Mask", "RPPIO_Severity", "RPPIO_SysError", "RPPIO_Exception");
+	printk(BIOS_INFO, "================================================================================================================================\n");
+
+	/* Iterate through all root ports */
+	const struct pcie_rp_group *group;
+	for (group = groups; group->count; ++group) {
+		unsigned int fn;
+		for (fn = rp_start_fn(group); fn <= rp_end_fn(group); ++fn) {
+			const pci_devfn_t devfn = PCI_DEV(0, group->slot, fn);
+			const uint16_t did = pci_s_read_config16(devfn, PCI_DEVICE_ID);
+			if (did == 0xffff)
+				continue;
+
+			/* Check if this is a root port */
+			const uint16_t clist = pci_s_find_capability(devfn, PCI_CAP_ID_PCIE);
+			if (clist == 0)
+				continue;
+
+			const uint16_t xcap = pci_s_read_config16(devfn, clist + PCI_EXP_FLAGS);
+			if ((xcap & PCI_EXP_FLAGS_TYPE) >> 4 != PCI_EXP_TYPE_ROOT_PORT)
+				continue;
+
+			/* Format device identifier */
+			char dev_str[12];
+			snprintf(dev_str, sizeof(dev_str), "00:%02x.%x", group->slot, fn);
+
+			/* Find AER Capability Base */
+			unsigned int aer_base = pcie_rp_find_ext_cap(devfn, PCIE_EXT_CAP_AER_ID);
+
+			/* Find DPC Capability Base */
+			unsigned int dpc_base = pcie_rp_find_ext_cap(devfn, PCIE_DPC_CAP_ID);
+
+			/* Initialize register values */
+			const char *aer_uce_mask = "N/A";
+			const char *aer_uce_sev = "N/A";
+			const char *aer_ce_mask = "N/A";
+			const char *dpc_ctrl = "N/A";
+			const char *rppio_mask = "N/A";
+			const char *rppio_sev = "N/A";
+			const char *rppio_syserr = "N/A";
+			const char *rppio_exc = "N/A";
+
+			char aer_uce_mask_str[12];
+			char aer_uce_sev_str[15];
+			char aer_ce_mask_str[12];
+			char dpc_ctrl_str[12];
+			char rppio_mask_str[12];
+			char rppio_sev_str[15];
+			char rppio_syserr_str[15];
+			char rppio_exc_str[15];
+
+			if (aer_base != 0) {
+				uint32_t uce_mask = pci_s_read_config32(devfn, aer_base + 0x08);
+				uint32_t uce_sev = pci_s_read_config32(devfn, aer_base + 0x0c);
+				uint32_t ce_mask = pci_s_read_config32(devfn, aer_base + 0x14);
+
+				snprintf(aer_uce_mask_str, sizeof(aer_uce_mask_str), "0x%08x", uce_mask);
+				snprintf(aer_uce_sev_str, sizeof(aer_uce_sev_str), "0x%08x", uce_sev);
+				snprintf(aer_ce_mask_str, sizeof(aer_ce_mask_str), "0x%08x", ce_mask);
+
+				aer_uce_mask = aer_uce_mask_str;
+				aer_uce_sev = aer_uce_sev_str;
+				aer_ce_mask = aer_ce_mask_str;
+			}
+
+			if (dpc_base != 0) {
+				uint16_t dpc_control = pci_s_read_config16(devfn, dpc_base + 0x06);
+				uint32_t rppio_mask_val = pci_s_read_config32(devfn, dpc_base + 0x10);
+				uint32_t rppio_sev_val = pci_s_read_config32(devfn, dpc_base + 0x14);
+				uint32_t rppio_syserr_val = pci_s_read_config32(devfn, dpc_base + 0x18);
+				uint32_t rppio_exc_val = pci_s_read_config32(devfn, dpc_base + 0x1c);
+
+				snprintf(dpc_ctrl_str, sizeof(dpc_ctrl_str), "0x%04x", dpc_control);
+				snprintf(rppio_mask_str, sizeof(rppio_mask_str), "0x%08x", rppio_mask_val);
+				snprintf(rppio_sev_str, sizeof(rppio_sev_str), "0x%08x", rppio_sev_val);
+				snprintf(rppio_syserr_str, sizeof(rppio_syserr_str), "0x%08x", rppio_syserr_val);
+				snprintf(rppio_exc_str, sizeof(rppio_exc_str), "0x%08x", rppio_exc_val);
+
+				dpc_ctrl = dpc_ctrl_str;
+				rppio_mask = rppio_mask_str;
+				rppio_sev = rppio_sev_str;
+				rppio_syserr = rppio_syserr_str;
+				rppio_exc = rppio_exc_str;
+			}
+
+			/* Print row */
+			printk(BIOS_INFO, "%-12s %-12s %-15s %-12s %-12s %-12s %-15s %-15s %-15s\n",
+			       dev_str, aer_uce_mask, aer_uce_sev, aer_ce_mask, dpc_ctrl,
+			       rppio_mask, rppio_sev, rppio_syserr, rppio_exc);
+		}
+	}
+	printk(BIOS_INFO, "\n");
 }

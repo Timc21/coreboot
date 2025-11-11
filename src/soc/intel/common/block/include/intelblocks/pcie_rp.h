@@ -153,4 +153,14 @@ enum pcie_rp_type soc_get_pcie_rp_type(const struct device *dev);
 /* Return the virtual wire index that represents CPU-side PCIe root ports */
 int soc_get_cpu_rp_vw_idx(const struct device *dev);
 
+/*
+ * Display PCIe Root Port error status registers (AER and DPC).
+ * This function prints a formatted table showing:
+ * - AER: UCE_Mask, UCE_Severity, CE_Mask
+ * - DPC: DPC_Control, RPPIO_Mask, RPPIO_Severity, RPPIO_SysError, RPPIO_Exception
+ *
+ * `groups` points to a list of groups terminated by an entry with `count == 0`.
+ */
+void pcie_rp_display_error_status(const struct pcie_rp_group *groups);
+
 #endif /* SOC_INTEL_COMMON_BLOCK_PCIE_RP_H */
