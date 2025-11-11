@@ -7,8 +7,8 @@ printf "%-12s %-12s %-15s %-12s %-12s %-12s %-15s %-15s %-15s\n" \
 "RootPort" "UCE_Mask" "UCE_Severity" "CE_Mask" "DPC_Control" "RPPIO_Mask" "RPPIO_Severity" "RPPIO_SysError" "RPPIO_Exception"
 printf "================================================================================================================================\n"
 
-# Find all Intel PCIe Root Ports
-ROOT_PORTS=$(lspci | grep "PCI bridge" | cut -d' ' -f1)
+# Find all Intel PCIe Root Ports (vendor ID 8086)
+ROOT_PORTS=$(lspci -d 8086:: | grep "PCI bridge" | cut -d' ' -f1)
 
 if [ -z "$ROOT_PORTS" ]; then
     echo "No PCIe Root Ports found."
